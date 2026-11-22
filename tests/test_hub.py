@@ -86,8 +86,8 @@ def test_conflicting_targets_raise(core_demo_compat, modules_copy):
 
 
 def test_module_without_weights_is_identity(core_demo_compat, tmp_path):
-    """Модуль без файла весов подключается, но ядро ведёт себя как «голое»."""
-    bare = make_core(d_model=64)  # то же семя, что у core_demo_compat
+    """A module without a weights file connects, but the core behaves as bare."""
+    bare = make_core(vocab_size=41, d_model=96, max_seq=48)  # same seed as core_demo_compat
     d = tmp_path / "modules"
     shutil.copytree(DEMO, d / "demo_math")
     shutil.rmtree(d / "demo_math" / "weights", ignore_errors=True)

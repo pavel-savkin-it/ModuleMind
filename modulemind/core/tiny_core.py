@@ -1,8 +1,8 @@
-"""TinyCore — крошечное «сознание» ModuleMind.
+"""TinyCore — the tiny 'consciousness' of ModuleMind.
 
-Мини-трансформер в духе minimind, но сильно меньше: обучается и работает
-на CPU слабого ПК. Сам по себе не знает ничего конкретного — знания
-приходят из подключённых LoRA-модулей (см. lora.py и hub.py).
+A miniature transformer in the spirit of minimind, but far smaller: it
+trains and runs on a weak CPU. On its own it knows nothing specific —
+knowledge comes exclusively from connected LoRA modules (see lora.py, hub.py).
 """
 import math
 
@@ -65,7 +65,7 @@ class Block(nn.Module):
 
 
 class TinyCore(nn.Module):
-    """Крошечный авторегрессионный трансформер (языковое ядро)."""
+    """Tiny autoregressive transformer (the language core)."""
 
     def __init__(self, config: CoreConfig):
         super().__init__()
@@ -90,7 +90,7 @@ class TinyCore(nn.Module):
         T = idx.shape[1]
         if T > self.config.max_seq:
             raise ValueError(
-                f"длина {T} превышает max_seq={self.config.max_seq}"
+                f"sequence length {T} exceeds max_seq={self.config.max_seq}"
             )
         pos = torch.arange(T, device=idx.device)
         x = self.tok_emb(idx) + self.pos_emb(pos)[None, :, :]
@@ -99,7 +99,7 @@ class TinyCore(nn.Module):
         return self.lm_head(self.ln_f(x))
 
     def generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
-        """Жадная генерация: дописывает max_new_tokens символов к каждому ряду."""
+        """Greedy generation: appends max_new_tokens chars to each row."""
         for _ in range(max_new_tokens):
             ctx = idx[:, -self.config.max_seq:]
             next_id = self(ctx)[:, -1].argmax(dim=-1, keepdim=True)

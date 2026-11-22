@@ -1,57 +1,58 @@
-# Гайд сообщества: как создать свой модуль-нейрон
+# Community guide: how to build your own neuron module
 
-Твоя цель: обучить маленький адаптер, который добавляет ядру одно чёткое
-знание или навык. Один модуль = одна тема («таблица умножения», «цвета»,
-«английские слова»…). Всё делается на CPU или бесплатном Colab.
+Your goal: train a small adapter that adds ONE clear piece of knowledge or
+skill to the core. One module = one topic ("multiplication table", "colors",
+"english words"...). Everything runs on CPU or free Colab.
 
-## Шаг 1. Выбери задачу и собери данные
+## Step 1. Pick a task and collect data
 
-- Задача должна сводиться к паре «запрос → ответ» (как в demo_math:
-  `2+1=3`).
-- Собери 20–1000 пар в текстовом файле, одна пара на строку.
-- Используй алфавит из символов, которых хватает для твоих пар
-  (у demo_math: `0123456789+= `).
+- The task must reduce to 'query → answer' pairs (like demo_math: `2+1=3`)
+  or to plain text in one style (like english: simple sentences).
+- Collect 20–1000 pairs (or a small text corpus) — one line per example.
+- Use the smallest alphabet that covers your data.
 
-## Шаг 2. Скопируй шаблон
+## Step 2. Copy the template
 
 ```bash
 cp -r modules/demo_math modules/my_topic
 rm modules/my_topic/weights/lora.npz
 ```
 
-Отредактируй `manifest.json` (имя, описание, rank). Не меняй `targets`,
-пока не уверена/уверен, что понимаешь их смысл.
+Edit `manifest.json` (name, description, rank). Do not change `targets`
+until you understand what they mean (see docs/ARCHITECTURE.md).
 
-## Шаг 3. Обучи
+## Step 3. Train
 
-Возьми за основу `modules/demo_math/train.py` — замени генерацию фактов
-на загрузку своих пар и алфавит. Обучение — только LoRA, ядро не трогаем.
+Use `modules/demo_math/train.py` or `modules/english/train.py` as the
+pattern: replace the facts/corpus with your data and keep the core frozen.
+Train under the release core `checkpoints/core_v1.npz` (the default) —
+modules are tied to the exact core weights.
 
-Локально (если достаточно CPU) или на Colab/Kaggle —
-см. [COLAB_TRAINING.md](COLAB_TRAINING.md). Критерий готовности:
-точность ответов на своих парах ≥ 0.9.
+Train locally (small tasks) or on Colab/Kaggle — see
+[COLAB_TRAINING.md](COLAB_TRAINING.md). Readiness criterion: accuracy on
+your own examples ≥ 0.9.
 
-## Шаг 4. Проверь (обязательно)
+## Step 4. Verify (mandatory)
 
 ```bash
-python -m pytest -v          # все тесты должны остаться зелёными
+python -m pytest -v          # all tests must stay green
 ```
 
-Добавь мини-тест по образцу `tests/test_demo_math.py`: обучи свой модуль
-в тесте за короткое время и проверь, что точность растёт. Тесты пишутся
-ДО кода — таков процесс проекта.
+Add a mini-test modeled on `tests/test_demo_math.py`: train your module
+inside the test (short run) and assert the metric improves. Tests are written
+BEFORE the code — that is the project process.
 
-## Шаг 5. Опиши и отправь PR
+## Step 5. Describe and open a PR
 
-- `manifest.json`: честное `description` (что именно знает ИИ с модулем),
-  `core_compat`, seed ядра, под которым обучал.
-- В PR: таблица «до/после» (точность без модуля и с модулем).
-- Ревью проверяет: манифест валиден, тесты зелёные, вес npz < 5 МБ.
+- `manifest.json`: an honest `description` (what exactly the AI knows with
+  the module), `core_compat`, the release core you trained under.
+- In the PR: a before/after table (metric without the module vs with it).
+- Review checks: manifest valid, tests green, weights npz < 5 MB.
 
-## Правила хорошего тона
+## Rules of good taste
 
-1. Один модуль — одна тема. Не пытайся научить всему сразу.
-2. Не переобучай «вакуумом»: если модуль отвечает мусором на запросы вне
-   темы, напиши это в description (ядру нечего «отклонять» вне зоны знаний).
-3. Веса модуля — только твои данные. Не присылай чужие корпуса и модели.
-4. Маленькие файлы: манифест ≤ 2 КБ, веса ≤ 5 МБ.
+1. One module — one topic. Do not try to teach everything at once.
+2. Say it honestly in `description` if the module answers garbage outside
+   its topic (the core has no way to 'reject' out-of-domain queries yet).
+3. The module weights must come from YOUR data. No third-party corpora or models.
+4. Small files: manifest ≤ 2 KB, weights ≤ 5 MB.

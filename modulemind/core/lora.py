@@ -1,8 +1,9 @@
-"""LoRA-адаптеры — механизм «нейронов» ModuleMind.
+"""LoRA adapters — the 'neuron' mechanism of ModuleMind.
 
-Модуль = маленькие обучаемые матрицы A (rank×d) и B (d×rank), вставленные
-поверх выбранных слоёв ядра. Свежий модуль инициализируется так, что его
-вклад равен нулю: подключение необученного модуля не меняет поведение ядра.
+A module = small trainable matrices A (rank x in) and B (out x rank) placed
+on top of selected core layers. A fresh module is initialized so its
+contribution is exactly zero: connecting an untrained module does not
+change the core's behavior at all.
 """
 import logging
 
@@ -14,12 +15,12 @@ log = logging.getLogger("modulemind.lora")
 
 
 class LoRALinear(nn.Module):
-    """Обёртка над nn.Linear: base(x) + scaling * (x @ Aᵀ @ Bᵀ)."""
+    """Wrapper over nn.Linear: base(x) + scaling * (x @ A^T @ B^T)."""
 
     def __init__(self, base: nn.Linear, rank: int, alpha: float):
         super().__init__()
         if not isinstance(base, nn.Linear):
-            raise TypeError("LoRA вставляется только поверх nn.Linear")
+            raise TypeError("LoRA can only wrap nn.Linear")
         self.base = base
         for p in self.base.parameters():
             p.requires_grad_(False)
@@ -45,9 +46,10 @@ def _matches(name: str, targets) -> bool:
 
 
 def inject_lora(model, targets, rank: int, alpha=None):
-    """Вставить LoRA поверх слоёв с именами из targets.
+    """Place LoRA on top of the layers named in targets.
 
-    Возвращает dict {путь_слоя: LoRALinear}.
+    Returns dict {layer_path: LoRALinear}. Freezes every non-LoRA parameter:
+    the core is untouchable, gradients live only in the adapters.
     """
     if alpha is None:
         alpha = float(rank)
@@ -58,25 +60,24 @@ def inject_lora(model, targets, rank: int, alpha=None):
             _replace(model, name, lora)
             handles[name] = lora
     if not handles:
-        raise ValueError(f"LoRA: ни одна из целей не найдена в ядре: {targets}")
-    # Ядро неприкосновенно: градиенты разрешены только адаптерам.
+        raise ValueError(f"LoRA: none of the targets found in the core: {targets}")
     for n, p in model.named_parameters():
         if "lora" not in n:
             p.requires_grad_(False)
-    log.info("LoRA вставлена в %d слоёв: %s", len(handles), sorted(handles))
+    log.info("LoRA injected into %d layers: %s", len(handles), sorted(handles))
     return handles
 
 
 def remove_lora(model, handles) -> int:
-    """Аккуратно вынуть свои LoRA-обёртки, вернув исходные слои."""
+    """Unwrap the given LoRA wrappers, restoring the original layers."""
     for path, lora in handles.items():
         _replace(model, path, lora.base)
-    log.info("LoRA снята с %d слоёв", len(handles))
+    log.info("LoRA removed from %d layers", len(handles))
     return len(handles)
 
 
 def detach_lora(model) -> int:
-    """Снять ВСЕ LoRA-обёртки с модели. Возвращает количество."""
+    """Remove ALL LoRA wrappers from the model. Returns how many."""
     n = 0
     for name, mod in list(model.named_modules()):
         if isinstance(mod, LoRALinear):
@@ -86,7 +87,7 @@ def detach_lora(model) -> int:
 
 
 def lora_state_dict(handles) -> dict:
-    """Веса всех адаптеров -> {«путь.A»/«путь.B»: float32 ndarray}."""
+    """Adapter weights -> {'<path>.A'/'<path>.B': float32 ndarray}."""
     out = {}
     for path, h in handles.items():
         out[f"{path}.A"] = h.lora_A.detach().cpu().numpy().astype(np.float32)
@@ -95,19 +96,19 @@ def lora_state_dict(handles) -> dict:
 
 
 def load_lora_state(handles, state):
-    """Загрузить веса в существующие адаптеры с проверкой форм."""
+    """Load weights into existing adapters with strict shape checks."""
     for path, h in handles.items():
         for key, param, shape in (
             (f"{path}.A", h.lora_A, h.lora_A.shape),
             (f"{path}.B", h.lora_B, h.lora_B.shape),
         ):
             if key not in state:
-                raise KeyError(f"в весах нет ключа «{key}»")
+                raise KeyError(f"weights miss key '{key}'")
             arr = np.asarray(state[key])
             if tuple(arr.shape) != tuple(shape):
                 raise ValueError(
-                    f"{key}: форма {arr.shape} не совпадает с ожидаемой {tuple(shape)}"
+                    f"{key}: shape {arr.shape} does not match expected {tuple(shape)}"
                 )
             with torch.no_grad():
                 param.copy_(torch.from_numpy(np.ascontiguousarray(arr)))
-    log.info("загружены веса для %d LoRA-слоёв", len(handles))
+    log.info("loaded weights for %d LoRA layers", len(handles))

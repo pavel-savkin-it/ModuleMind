@@ -1,11 +1,11 @@
 {
   "name": "demo_math",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "lora_adapter",
-  "description": "Демо-модуль: сложение чисел 0..4. Отвечает на запросы вида «a+b=» одной цифрой.",
+  "description": "Demo module: addition of numbers 0..4. Answers 'a+b=' with the correct digit. Trained under core v1.",
   "targets": ["attn.q", "attn.v", "lm_head"],
   "rank": 8,
   "alpha": 16.0,
   "weights": "weights/lora.npz",
-  "core_compat": {"d_model": 64, "n_layers": 2, "vocab_size": 14}
+  "core_compat": {"d_model": 96, "n_layers": 2, "vocab_size": 41}
 }

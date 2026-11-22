@@ -1,23 +1,41 @@
 # ModuleMind
 
-**Модульный ИИ: ядро-«сознание» + подключаемые модули-нейроны.**
+**A modular AI: a core-'consciousness' + pluggable neuron modules.**
 
-Ядро само по себе не знает ничего конкретного. Подключили модуль «математика» —
-ИИ математик. Подключили модуль «английский язык» — говорит по-английски.
-Отключили — знание исчезло. **ИИ знает ровно то, что к нему подключили.**
+On its own the core knows nothing specific. Connect the 'math' module — the AI
+becomes a mathematician. Connect the 'english' module — it speaks English.
+Disconnect — the knowledge is gone. **The AI knows exactly what you plugged in.**
 
 ```
-запрос → ЯДРО (TinyCore, заморожено) → [LoRA-модули: ✅ математика ✅ английский …] → ответ
+query → CORE (TinyCore, frozen) → [LoRA modules: ✅ math ✅ english …] → answer
 ```
 
-- **Ядро (TinyCore)** — крошечный трансформер, неприкосновенен: градиенты
-  разрешены только модулям.
-- **Модуль-нейрон** = `manifest.json` + маленький файл весов `lora.npz`
-  (LoRA-адаптер). Сообщество обучает модули на Colab/Kaggle по нашей
-  [инструкции](docs/MODULE_GUIDE.md).
-- **ModuleHub** — подключает/отключает модули; каждое действие пишется в лог.
+- **Core (TinyCore)** — a tiny transformer, untouchable: gradients are allowed
+  only inside modules.
+- **Neuron module** = `manifest.json` + a small weights file `lora.npz`
+  (a LoRA adapter). The community trains modules on Colab/Kaggle following our
+  [guide](docs/MODULE_GUIDE.md).
+- **ModuleHub** — connects/disconnects modules; every action is logged.
 
-## Быстрый старт (CPU, слабый ПК — ок)
+## The first model (proof it all works)
+
+`checkpoints/core_v1.npz` — our first core, **trained from scratch on CPU**
+(~235K params, toy English + arithmetic corpus). Two modules are trained under
+it and committed:
+
+| Module | What the AI gets | Proof |
+|---|---|---|
+| `demo_math` | answers `a+b=` for digits 0..4 | 5/5 facts right when connected |
+| `english` | speaks simple English sentences | holdout loss drops measurably |
+
+Live proof:
+
+```bash
+python demo.py        # bare core → babble; +english → English; +math → correct sums
+python -m pytest -v   # all mini-tests incl. acceptance e2e
+```
+
+## Quick start (CPU, a weak PC is fine)
 
 ```bash
 git clone git@github.com:pavel-savkin-it/ModuleMind.git
@@ -25,54 +43,64 @@ cd ModuleMind
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# обучить демо-модуль (~10 секунд на CPU)
-python -m modules.demo_math.train
+# rebuild the first core from scratch (~10 min CPU) — or use the committed one
+python -m modulemind.core.pretrain
 
-# все мини-тесты (31 шт., ~7 секунд)
+# (re)train the modules under your core
+python -m modules.demo_math.train
+python -m modules.english.train
+
 python -m pytest -v
 ```
 
-## Подключить модуль — 6 строк
+## Connect a module — 6 lines
 
 ```python
 import torch
-from modulemind.core import ModuleHub, TinyCore, CoreConfig, CharTokenizer
+from modulemind.core import ModuleHub
+from modulemind.core.checkpoint import load_core
+from modulemind.core.tokenizer import CharTokenizer
 
-core = TinyCore(CoreConfig(vocab_size=14, d_model=64, n_layers=2, n_heads=4, max_seq=16, seed=0))
+core = load_core("checkpoints/core_v1.npz")
 tok = CharTokenizer("0123456789+= ")
 hub = ModuleHub(core, "modules")
 
-hub.connect("demo_math")            # ← ИИ стал математиком
-print(hub.describe())               # что ИИ знает прямо сейчас
+hub.connect("demo_math")            # ← the AI became a mathematician
+print(hub.describe())               # what the AI knows right now
 ids = torch.tensor([tok.encode("2+1=")])
-print(tok.decode([int(core(ids)[0, -1].argmax())]))   # → «3»
+print(tok.decode([int(core(ids)[0, -1].argmax())]))   # → "3"
 ```
 
-## Структура
+## Structure
 
 ```
-modulemind/core/   ядро: tiny_core, lora, hub, tokenizer, config, log_setup
-modules/           подключаемые модули (demo_math — образец для сообщества)
-tests/             31 мини-тест (тесты всегда пишутся ПЕРЕД кодом)
-docs/              архитектура, формат модуля, гайд сообщества, Colab, HANDOFF
-logs/              modulemind.log (в git не входит)
+modulemind/core/     core: tiny_core, lora, hub, tokenizer, checkpoint, pretrain
+modulemind/data/     toy corpora (deterministic)
+modules/             pluggable modules (english, demo_math — the template)
+checkpoints/         core_v1.npz — the release core (+ meta json)
+tests/               mini-tests (tests are always written BEFORE the code)
+docs/                architecture, module format, community guide, Colab, HANDOFF
+logs/                modulemind.log (not committed)
 ```
 
-## Документация
+## Documentation
 
-| Документ | О чём |
+| Document | About |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | как всё устроено и почему |
-| [docs/MODULE_FORMAT.md](docs/MODULE_FORMAT.md) | формат модуля (для людей и ИИ-агентов) |
-| [docs/MODULE_GUIDE.md](docs/MODULE_GUIDE.md) | как сообществу создать и обучить свой модуль |
-| [docs/COLAB_TRAINING.md](docs/COLAB_TRAINING.md) | обучение модулей на Colab/Kaggle |
-| [docs/HANDOFF.md](docs/HANDOFF.md) | документ продолжения работы (при обрыве связи) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | how it all works and why |
+| [docs/MODULE_FORMAT.md](docs/MODULE_FORMAT.md) | module format (for humans and AI agents) |
+| [docs/MODULE_GUIDE.md](docs/MODULE_GUIDE.md) | how the community builds and trains a module |
+| [docs/COLAB_TRAINING.md](docs/COLAB_TRAINING.md) | training modules on Colab/Kaggle |
+| [docs/HANDOFF.md](docs/HANDOFF.md) | continuation document (if the agent session drops) |
 
-## Статус
+## Status
 
-- [x] Этап 0 (готово): MVP — ядро + LoRA-модули + демо-модуль «сложение 0..4» + 31 тест
-- [ ] Этап 1: предобучение ядра на Colab/Kaggle (свой корпус)
-- [ ] Этап 2: модуль «английский язык» на обученном ядре
-- [ ] Этап 3: CI для PR сообщества, слияние/конфликт модулей
+- [x] Stage 0: MVP — core + LoRA modules + demo_math (random core, 31 tests)
+- [x] Stage 1a: the FIRST core trained from scratch (core_v1) + english module —
+      the full idea proven locally on CPU
+- [ ] Stage 1b: large-scale pretraining on Colab/Kaggle (real corpus, bigger core)
+- [ ] Stage 2: a real English-language module on the pretrained core (BPE tokenizer)
+- [ ] Stage 3: CI for community PRs, merging multiple modules
 
-Референс подхода: [minimind](https://github.com/jingyaogong/minimind) — мы идём тем же путём, но меньше и с модульностью.
+Reference approach: [minimind](https://github.com/jingyaogong/minimind) — we walk
+the same path but smaller, with pluggable knowledge.

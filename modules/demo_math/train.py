@@ -1,9 +1,12 @@
-"""Обучение демо-модуля demo_math: таблица сложения 0..4.
+"""Training the demo module demo_math: the addition table 0..4.
 
-Обучается ТОЛЬКО LoRA-адаптер (ядро заморожено) — поэтому это и есть
-«знание модуля». Всё считается на CPU за секунды.
+ONLY the LoRA adapter is trained (the core stays frozen) — that is why this
+knowledge belongs to the module. Runs on CPU in seconds.
 
-Запуск из корня репозитория:
+By default the module is trained under the release core
+checkpoints/core_v1.npz (modules are tied to the exact core weights!).
+
+Run from the repo root:
     python -m modules.demo_math.train --steps 400
 """
 import argparse
@@ -22,21 +25,31 @@ from modulemind.core.config import CoreConfig            # noqa: E402
 from modulemind.core.tokenizer import CharTokenizer      # noqa: E402
 from modulemind.core.tiny_core import TinyCore           # noqa: E402
 from modulemind.core.lora import inject_lora, lora_state_dict  # noqa: E402
+from modulemind.core.checkpoint import load_core         # noqa: E402
 from modulemind.core.log_setup import get_logger         # noqa: E402
 
 MODULE_DIR = Path(__file__).resolve().parent
 ALPHABET = "0123456789+= "
 TARGETS = ["attn.q", "attn.v", "lm_head"]
+DEFAULT_CORE = ROOT / "checkpoints" / "core_v1.npz"
 
 
 def make_facts(max_digit: int = 4):
-    """Все факты «a+b=c» для a, b из 0..max_digit (ответ — одна цифра)."""
+    """All facts 'a+b=c' for a, b in 0..max_digit (single-digit answers)."""
     return [f"{a}+{b}={a + b}" for a in range(max_digit + 1)
             for b in range(max_digit + 1)]
 
 
+def _load_default_core(tok):
+    """The release core if present, otherwise a fresh random tiny core."""
+    if DEFAULT_CORE.exists():
+        return load_core(DEFAULT_CORE), "core_v1"
+    return TinyCore(CoreConfig(vocab_size=tok.vocab_size, d_model=64,
+                               n_layers=2, n_heads=4, max_seq=16, seed=0)), "fresh"
+
+
 def _answer_accuracy(core, tok, facts):
-    """Доля фактов, где ядро сразу после «=» выдаёт верную цифру."""
+    """Fraction of facts where the core outputs the right digit after '='."""
     ok = 0
     for f in facts:
         ids = torch.tensor([tok.encode(f.split("=")[0] + "=")])
@@ -47,19 +60,22 @@ def _answer_accuracy(core, tok, facts):
 
 
 def train_demo(steps=400, batch=32, lr=1e-2, seed=0, max_digit=4,
-               rank=8, alpha=16.0, out_dir=None, log_to_console=True):
-    """Обучить адаптер на фактах сложения; вернуть метрики и сохранить веса."""
+               rank=8, alpha=16.0, out_dir=None, log_to_console=True,
+               core=None):
+    """Train the adapter on addition facts; return metrics and save weights."""
     log = get_logger("modulemind.demo_train", log_dir=str(ROOT / "logs"))
     torch.manual_seed(seed)
 
     tok = CharTokenizer(ALPHABET)
-    core = TinyCore(CoreConfig(vocab_size=tok.vocab_size, d_model=64,
-                               n_layers=2, n_heads=4, max_seq=16))
+    if core is None:
+        core, core_kind = _load_default_core(tok)
+    else:
+        core_kind = "provided"
     facts = make_facts(max_digit)
     baseline_acc = _answer_accuracy(core, tok, facts)
 
     handles = inject_lora(core, TARGETS, rank, alpha)
-    params = [p for n, p in core.named_parameters() if "lora" in n]
+    params = [p for n, p in core.named_parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=lr)
 
     data = [tok.encode(f) for f in facts]
@@ -73,7 +89,7 @@ def train_demo(steps=400, batch=32, lr=1e-2, seed=0, max_digit=4,
         for r, s in enumerate(seqs):
             x[r, :len(s) - 1] = torch.tensor(s[:-1])
             y[r, :len(s) - 1] = torch.tensor(s[1:])
-        logits = core(x).reshape(-1, tok.vocab_size)
+        logits = core(x).reshape(-1, core.config.vocab_size)
         loss = torch.nn.functional.cross_entropy(logits, y.reshape(-1))
         opt.zero_grad()
         loss.backward()
@@ -82,9 +98,9 @@ def train_demo(steps=400, batch=32, lr=1e-2, seed=0, max_digit=4,
             first_loss = float(loss.detach())
         last_loss = float(loss.detach())
         if step % 50 == 0 or step == 1:
-            log.info("шаг %d/%d loss=%.4f", step, steps, last_loss)
+            log.info("step %d/%d loss=%.4f", step, steps, last_loss)
             if log_to_console:
-                print(f"  шаг {step}/{steps} loss={last_loss:.4f}")
+                print(f"  step {step}/{steps} loss={last_loss:.4f}")
 
     answer_acc = _answer_accuracy(core, tok, facts)
     out_dir = Path(out_dir) if out_dir else MODULE_DIR / "weights"
@@ -92,17 +108,17 @@ def train_demo(steps=400, batch=32, lr=1e-2, seed=0, max_digit=4,
     np.savez_compressed(out_dir / "lora.npz", **lora_state_dict(handles))
 
     result = {
-        "steps": steps, "rank": rank, "facts": len(facts),
+        "steps": steps, "rank": rank, "facts": len(facts), "core": core_kind,
         "first_loss": round(first_loss, 4), "last_loss": round(last_loss, 4),
         "baseline_acc": round(baseline_acc, 3), "answer_acc": round(answer_acc, 3),
         "weights": str(out_dir / "lora.npz"),
     }
-    log.info("обучение завершено: %s", json.dumps(result, ensure_ascii=False))
+    log.info("training finished: %s", json.dumps(result, ensure_ascii=False))
     return result
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Обучение демо-модуля demo_math")
+    ap = argparse.ArgumentParser(description="Train the demo_math module")
     ap.add_argument("--steps", type=int, default=400)
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--lr", type=float, default=1e-2)

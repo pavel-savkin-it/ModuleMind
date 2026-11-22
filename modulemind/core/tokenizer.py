@@ -1,12 +1,12 @@
-"""Посимвольный токенизатор: минимальная зависимость для крошечного ядра."""
+"""Character-level tokenizer: the minimal dependency for the tiny core."""
 
 
 class CharTokenizer:
-    """Текст <-> список id. Неизвестные символы -> UNK («?» при декодировании)."""
+    """Text <-> list of ids. Unknown characters map to UNK ('?' on decode)."""
 
     def __init__(self, alphabet: str, unk: str = "?"):
         if unk in alphabet:
-            raise ValueError(f"символ UNK «{unk}» не должен входить в алфавит")
+            raise ValueError(f"UNK char '{unk}' must not be part of the alphabet")
         self.unk = unk
         self.chars = sorted(set(alphabet))
         self.stoi = {c: i for i, c in enumerate(self.chars)}
@@ -15,7 +15,7 @@ class CharTokenizer:
 
     @property
     def vocab_size(self) -> int:
-        return len(self.chars) + 1  # +1 на UNK
+        return len(self.chars) + 1  # +1 for UNK
 
     def encode(self, text: str) -> list:
         return [self.stoi.get(c, self.unk_id) for c in text]

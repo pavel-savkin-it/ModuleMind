@@ -1,7 +1,7 @@
-"""ModuleHub — «сознание»-диспетчер: подключает модули-нейроны к ядру.
+"""ModuleHub — the dispatcher 'consciousness': plugs modules into the core.
 
-ИИ знает РОВНО то, что подключено: список подключённых модулей
-(dcx.describe()) — это и есть текущее «знание» системы.
+The AI knows EXACTLY what is connected: the list of connected modules
+(hub.describe()) is the current knowledge of the system.
 """
 import json
 import re
@@ -18,11 +18,11 @@ _NAME_RE = re.compile(r"^[a-z0-9_]+$")
 
 
 class ModuleError(Exception):
-    """Ошибка манифеста или жизненного цикла модуля."""
+    """Manifest error or module lifecycle error."""
 
 
 class ModuleConflictError(ModuleError):
-    """Два модуля претендуют на одни и те же слои ядра."""
+    """Two modules claim the same core layers."""
 
 
 class ModuleHub:
@@ -30,17 +30,18 @@ class ModuleHub:
         self.core = core
         self.modules_dir = Path(modules_dir)
         self.log = get_logger("modulemind.hub", log_dir=log_dir)
-        self._catalog = {}    # name -> мета модуля
+        self._catalog = {}    # name -> module meta
         self._connected = {}  # name -> {"meta": ..., "handles": ...}
         self.rescan()
 
-    # ---------- обнаружение ----------
+    # ---------- discovery ----------
 
     def rescan(self):
-        """Пересканировать каталог модулей; битые манифесты пропускаем с warning."""
+        """Rescan the modules directory; broken manifests are skipped with
+        a warning and never crash the system."""
         self._catalog.clear()
         if not self.modules_dir.exists():
-            self.log.warning("каталог модулей %s не существует", self.modules_dir)
+            self.log.warning("modules directory %s does not exist", self.modules_dir)
             return []
         for child in sorted(self.modules_dir.iterdir()):
             mf = child / "manifest.json"
@@ -51,61 +52,57 @@ class ModuleHub:
                     json.loads(mf.read_text(encoding="utf-8")), child
                 )
             except (json.JSONDecodeError, ModuleError) as e:
-                self.log.warning("пропущен модуль %s: %s", child.name, e)
+                self.log.warning("skipped module %s: %s", child.name, e)
                 continue
             self._catalog[meta["name"]] = meta
-            self.log.info("найден модуль «%s» v%s", meta["name"], meta["version"])
+            self.log.info("found module '%s' v%s", meta["name"], meta["version"])
         return list(self._catalog)
 
-    # синоним: короче в примерах
     def scan(self):
         return self.rescan()
 
     def _validate(self, data, mod_dir: Path) -> dict:
         if not isinstance(data, dict):
-            raise ModuleError("манифест должен быть JSON-объектом")
+            raise ModuleError("manifest must be a JSON object")
         for k in REQUIRED_FIELDS:
             if k not in data:
-                raise ModuleError(f"нет обязательного поля «{k}»")
+                raise ModuleError(f"missing required field '{k}'")
         if data["type"] not in SUPPORTED_TYPES:
-            raise ModuleError(f"неизвестный тип модуля: {data['type']}")
+            raise ModuleError(f"unknown module type: {data['type']}")
         if not isinstance(data["name"], str) or not _NAME_RE.match(data["name"]):
-            raise ModuleError(
-                "имя модуля — строчные латинские буквы, цифры и «_»"
-            )
+            raise ModuleError("module name must match ^[a-z0-9_]+$")
         t = data["targets"]
         if not isinstance(t, list) or not t or not all(isinstance(x, str) for x in t):
-            raise ModuleError("targets должен быть непустым списком строк")
+            raise ModuleError("targets must be a non-empty list of strings")
         rank = data["rank"]
         if not isinstance(rank, int) or not 1 <= rank <= 256:
-            raise ModuleError("rank должен быть целым 1..256")
+            raise ModuleError("rank must be an integer 1..256")
         alpha = data.get("alpha", rank)
         if not isinstance(alpha, (int, float)) or alpha <= 0:
-            raise ModuleError("alpha должен быть положительным числом")
+            raise ModuleError("alpha must be a positive number")
         w = data.get("weights")
-        if w is not None:
-            if ".." in str(w):
-                raise ModuleError("weights не может выходить за каталог модуля")
+        if w is not None and ".." in str(w):
+            raise ModuleError("weights must not leave the module directory")
         compat = data.get("core_compat")
         if compat is not None and not isinstance(compat, dict):
-            raise ModuleError("core_compat должен быть объектом")
+            raise ModuleError("core_compat must be an object")
         return {**data, "alpha": alpha, "dir": mod_dir}
 
-    # ---------- жизненный цикл ----------
+    # ---------- lifecycle ----------
 
     def connect(self, name: str):
-        """Подключить модуль: вставить LoRA и (если есть) загрузить веса."""
+        """Connect a module: inject its LoRA and (if present) load weights."""
         if name not in self._catalog:
-            raise ModuleError(f"модуль «{name}» не найден в {self.modules_dir}")
+            raise ModuleError(f"module '{name}' not found in {self.modules_dir}")
         if name in self._connected:
-            raise ModuleError(f"модуль «{name}» уже подключён")
+            raise ModuleError(f"module '{name}' is already connected")
         meta = self._catalog[name]
 
         for other, info in self._connected.items():
             overlap = set(meta["targets"]) & set(info["meta"]["targets"])
             if overlap:
                 raise ModuleConflictError(
-                    f"слои {sorted(overlap)} уже заняты модулем «{other}»"
+                    f"layers {sorted(overlap)} are already taken by module '{other}'"
                 )
 
         compat = meta.get("core_compat", {})
@@ -116,7 +113,7 @@ class ModuleHub:
         }
         if mism:
             self.log.warning(
-                "модуль «%s» собран под другое ядро: %s", name, mism
+                "module '%s' was built for a different core: %s", name, mism
             )
 
         try:
@@ -134,33 +131,35 @@ class ModuleHub:
                     load_lora_state(handles, np.load(wfile))
                 except (KeyError, ValueError) as e:
                     remove_lora(self.core, handles)
-                    raise ModuleError(f"веса модуля «{name}» несовместимы: {e}") from e
+                    raise ModuleError(
+                        f"weights of module '{name}' are incompatible: {e}"
+                    ) from e
             else:
                 self.log.warning(
-                    "модуль «%s» без весов (необученный): поведение ядра не меняется",
-                    name,
+                    "module '%s' has no weights (untrained): core behavior "
+                    "is unchanged", name,
                 )
         self._connected[name] = {"meta": meta, "handles": handles}
         self.log.info(
-            "подключён модуль «%s» v%s targets=%s rank=%s",
+            "connected module '%s' v%s targets=%s rank=%s",
             name, meta["version"], meta["targets"], meta["rank"],
         )
 
     def disconnect(self, name: str):
-        """Отключить модуль: ядро возвращается в исходное состояние."""
+        """Disconnect a module: the core returns to its exact prior state."""
         if name not in self._connected:
-            raise ModuleError(f"модуль «{name}» не подключён")
+            raise ModuleError(f"module '{name}' is not connected")
         remove_lora(self.core, self._connected[name]["handles"])
         del self._connected[name]
-        self.log.info("отключён модуль «%s»", name)
+        self.log.info("disconnected module '%s'", name)
 
-    # ---------- «знание» системы ----------
+    # ---------- the knowledge of the system ----------
 
     def connected(self):
         return list(self._connected)
 
     def describe(self):
-        """Что ИИ знает прямо сейчас = список подключённых модулей."""
+        """What the AI knows right now = the list of connected modules."""
         return [
             {
                 "name": m["meta"]["name"],

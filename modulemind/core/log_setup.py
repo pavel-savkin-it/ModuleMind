@@ -1,4 +1,4 @@
-"""Единая настройка логирования ModuleMind (файл + консоль)."""
+"""Unified logging setup for ModuleMind (file + console)."""
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -7,9 +7,9 @@ _FMT = "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
 
 
 def get_logger(name: str, log_dir="logs") -> logging.Logger:
-    """Логгер с файловым (INFO+) и консольным (WARNING+) обработчиком.
+    """Logger with a file handler (INFO+) and a console handler (WARNING+).
 
-    Повторный вызов с тем же именем не дублирует обработчики.
+    Calling again with the same name never duplicates handlers.
     """
     logger = logging.getLogger(name)
     if getattr(logger, "_mm_configured", False):

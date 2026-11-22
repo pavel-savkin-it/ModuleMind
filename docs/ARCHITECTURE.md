@@ -1,59 +1,80 @@
-# Архитектура ModuleMind (v0.1, этап 0 — MVP)
+# ModuleMind Architecture (v0.2 — stage 1a: the first model)
 
-## Компоненты
+## Components
 
 ```
 modulemind/core/
-  config.py      CoreConfig — размеры ядра (vocab, d_model, слои, головы)
-  tokenizer.py   CharTokenizer — посимвольный токенизатор (+символ UNK)
-  tiny_core.py   TinyCore — мини-трансформер: emb → 2×блока → lm_head
-  lora.py        LoRALinear + inject/remove/detach + save/load весов
-  hub.py         ModuleHub — обнаружение, валидация, connect/disconnect
-  log_setup.py   get_logger — файл logs/modulemind.log + консоль (WARNING+)
+  config.py      CoreConfig — core sizes (vocab, d_model, layers, heads)
+  tokenizer.py   CharTokenizer — char-level tokenizer (+UNK symbol)
+  tiny_core.py   TinyCore — mini transformer: emb → 2 blocks → lm_head
+  lora.py        LoRALinear + inject/remove/detach + weights save/load
+  hub.py         ModuleHub — discovery, validation, connect/disconnect
+  checkpoint.py  save_core/load_core — release artifacts (npz)
+  pretrain.py    stage 1: from-scratch pretraining of the core
+  log_setup.py   get_logger — logs/modulemind.log + console (WARNING+)
+modulemind/data/
+  toy_corpus.py  deterministic toy corpora (English + arithmetic)
+modules/
+  demo_math/     math module (addition 0..4) — the community template
+  english/       english module (simple sentences)
+checkpoints/
+  core_v1.npz    THE first core trained from scratch (release artifact)
 ```
 
-## Поток запроса
+## Request flow
 
-1. Текст → `CharTokenizer.encode` → id символов.
-2. `TinyCore.forward` → логиты следующего символа.
-3. Внутри каждого целевого слоя: `y = base(x) + (alpha/rank)·x·Aᵀ·Bᵀ` для
-   КАЖДОГО подключённого модуля (LoRA).
-4. Ответ: argmax последней позиции → `decode`.
+1. Text → `CharTokenizer.encode` → char ids.
+2. `TinyCore.forward` → logits for the next character.
+3. Inside every targeted layer: `y = base(x) + (alpha/rank)·x·Aᵀ·Bᵀ` for EACH
+   connected module (LoRA).
+4. Answer: argmax at the last position → `decode`.
 
-## Ключевые решения и инварианты
+## Key decisions and invariants
 
-1. **Ядро неприкосновенно.** `inject_lora` замораживает все параметры ядра;
-   градиенты разрешены только `lora_A`/`lora_B`. Знания живут только в
-   модулях — поэтому их можно подключать и снимать без следов
-   (e2e-тест проверяет совпадение логитов бит-в-бит после отключения).
-2. **Необученный модуль = ноль эффекта.** `lora_B` инициализируется нулями,
-   значит свежеподключённый модуль не меняет поведение ядра.
-3. **Один модуль на слой.** Два модуля с одинаковыми `targets` →
-   `ModuleConflictError`. Слияние нескольких модулей — этап 3.
-4. **Веса модуля привязаны к конкретному ядру.** Адаптер обучается под
-   точный набор весов ядра (seed + конфиг). demo_math обучен под ядро
-   `seed=0, d_model=64, n_layers=2, vocab=14`. Ядро другого seed с теми же
-   размерами загрузит веса без ошибки форм, но смысла не будет → в этапе 1
-   появится «отпечаток ядра» (hash state_dict) в манифесте.
-5. **Тесты перед кодом.** Каждый компонент сначала покрыт мини-тестами
-   (31 шт., ~7 c на CPU). Новая фича = сначала красный тест.
-6. **Логирование всего.** connect/disconnect/обучение/ошибки — в
-   `logs/modulemind.log` (ротация 1 МБ × 3). По логу всегда видно «в чём дело».
+1. **The core is untouchable.** `inject_lora` freezes all core parameters;
+   gradients are allowed only for `lora_A`/`lora_B`. Knowledge lives only in
+   modules — so modules can be plugged and removed without a trace (the e2e
+   test checks logits match bit-for-bit after disconnecting).
+2. **An untrained module = zero effect.** `lora_B` starts as zeros, so a
+   freshly connected untrained module does not change the core at all.
+3. **One module per layer.** Two modules with overlapping `targets` →
+   `ModuleConflictError`. Merging several modules is stage 3.
+4. **Module weights are tied to the exact core.** An adapter is trained under
+   one specific core instance (same config AND same weights). The release
+   artifact `checkpoints/core_v1.npz` is the single source: rebuilt only via
+   `python -m modulemind.core.pretrain` (deterministic: same seed 2026, same
+   corpus). Manifests carry `core_compat` (d_model/n_layers/vocab_size); a
+   full weight-hash fingerprint is planned for stage 2.
+5. **Tests before code.** Every component is covered by mini-tests first
+   (~40 tests, under a minute on CPU). A new feature starts as a red test.
+6. **Everything is logged.** connect/disconnect/training/errors →
+   `logs/modulemind.log` (1 MB rotation × 3). The log always shows what happened.
 
-## Почему LoRA (а не слои или роутер)
+## Why LoRA (not whole layers, not a router)
 
-| Вариант | Плюсы | Минусы |
+| Option | Pros | Cons |
 |---|---|---|
-| **LoRA (выбрано)** | крошечные веса, обучение на бесплатном Colab, ядро одно и общее | модуль привязан к ядру |
-| Слои-модули | сильнее влияние | веса больше, обучение дороже |
-| Роутер + микро-сети | полная независимость | навыки не смешиваются |
+| **LoRA (chosen)** | tiny weights, trainable on free Colab, one shared core | a module is tied to its core |
+| Layer modules | stronger influence | bigger weights, costlier training |
+| Router + micro-nets | full independence | skills do not mix |
 
-Референс: [minimind](https://github.com/jingyaogong/minimind) — мини-LM,
-обучаемый с нуля на дешёвом железе. Наше ядро — та же идея, но ~100 тыс.
-параметров и с подключаемыми знаниями.
+Reference: [minimind](https://github.com/jingyaogong/minimind) — a mini LM
+trained from scratch on cheap hardware. Our core is the same idea, ~235K
+parameters, with pluggable knowledge.
 
-## Ограничения этапа 0 (честно)
+## The first model: what was proven (stage 1a)
 
-- Ядро НЕ предобучено: ответы «мусорные» без модулей (это и показано в e2e).
-- Демо-модуль — запоминание 25 фактов сложения (0..4), не «настоящая» арифметика.
-- Токенизация посимвольная; BPE — на этапе предобучения ядра.
+- core_v1 pretrained from scratch on CPU (3000 steps, loss 2.74 → ~1.2 on the
+  toy corpus, ~10 minutes on a weak laptop);
+- `english` module: holdout loss (fresh sentences, reserved subjects never seen
+  in training) drops measurably when connected;
+- `demo_math` module: 5/5 facts answered correctly when connected;
+- bare core fails both tasks; disconnecting restores the core bit-for-bit;
+- e2e tests assert all of the above, `demo.py` prints it live.
+
+## Honest limitations of stage 1a
+
+- The corpus is tiny template English — the core is a proof, not a chatbot.
+- Char-level tokenizer; BPE comes with stage 1b/2.
+- demo_math is memorized addition (0..4), not general arithmetic.
+- Modules are tied to core_v1 — changing the core requires retraining modules.
