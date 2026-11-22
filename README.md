@@ -1,154 +1,163 @@
 # ModuleMind
 
-**An AI that knows exactly what you plug into it.**
+## The idea in 10 seconds
 
-The **core** ("the mind") is a tiny neural network trained from scratch.
-On its own it knows NOTHING — it cannot speak, cannot count.
+We are building a small AI brain.
 
-Every skill lives in a separate **module** — a small file of weights:
+The brain starts **empty**. It knows NOTHING.
 
-- plug in the `english` module → the AI speaks English
-- plug in the `demo_math` module → the AI does addition
-- unplug it → the knowledge is gone, without a trace
+Knowledge comes in small packages. We call them **modules**.
 
-Think of a game console: the console (core) does nothing without a
-cartridge (module) — and anyone can build a new cartridge.
+- Connect a module → the AI learns ONE new thing.
+- Disconnect it → the AI forgets that thing. Completely.
 
-```
-query → CORE (frozen, knows nothing) → [ connected modules ] → answer
-```
+Example:
+
+- Module "math" is connected → the AI answers `2+1=3`.
+- Nothing is connected → the AI answers with garbage.
+
+That is the whole idea.
 
 ---
 
-## Choose your path
+## What is in this repository?
 
-### Path 1 — Just try it (5 minutes, CPU is enough)
+Three things:
 
-**Step 1.** Get the code and install dependencies:
+1. **The core** — a small program (a mini neural network). This is the
+   empty brain. It is already trained and saved in `checkpoints/`.
+2. **Two example modules**:
+   - `modules/demo_math` — the skill "add numbers 0..4"
+   - `modules/english` — the skill "speak simple English"
+3. **Code that connects and disconnects modules** at any moment.
+
+A module is just a small file (~30–70 KB). You can make your own.
+
+---
+
+## Try it now (5 minutes, no GPU, weak PC is fine)
+
+Open a terminal. Copy-paste these commands one by one.
+
+**Step 1 — download and install (one time):**
 
 ```bash
 git clone https://github.com/pavel-savkin-it/ModuleMind.git
 cd ModuleMind
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Step 2.** Run the tests — 42 mini-tests, ~7 seconds, ALL must pass:
+**Step 2 — run the tests:**
 
 ```bash
 python -m pytest -v
-# expected last line:  42 passed
 ```
 
-**Step 3.** Run the live demo:
+You should see the line `42 passed` at the bottom.
+If you see red errors — tell us, something is broken.
+
+**Step 3 — run the demo:**
 
 ```bash
 python demo.py
 ```
 
-You will see the SAME core in 4 states (see the table below).
+This is the fun part. You will see the SAME brain in 4 situations:
 
-### Path 2 — Train your own module (the community path)
-
-Guides: **[docs/MODULE_GUIDE.md](docs/MODULE_GUIDE.md)** (step by step) and
-**[docs/COLAB_TRAINING.md](docs/COLAB_TRAINING.md)** (free Colab/Kaggle).
-
-Short version:
-
-1. Pick **ONE** topic for your module ("multiplication table", "capitals"…).
-2. Collect data: 20–1000 examples, one per line (`2+1=3` or plain text).
-3. Copy the template: `cp -r modules/demo_math modules/my_topic`
-4. Train on free Colab with the template script (~10 minutes, no GPU needed).
-5. Add a mini-test (copy `tests/test_demo_math.py`), run `pytest` — all green.
-6. Open a PR with your module folder.
-
-### Path 3 — Rebuild the core from scratch (advanced)
-
-```bash
-python -m modulemind.core.pretrain     # ~10 min CPU → checkpoints/core_v1.npz
-python -m modules.demo_math.train      # retrain modules under YOUR core
-python -m modules.english.train
-python -m pytest -v                    # all green again
-```
-
-**Important:** module weights are tied to the EXACT core weights.
-If you rebuild the core, you MUST retrain the modules under it.
-
----
-
-## What the demo shows
-
-`python demo.py` runs one and the same core in 4 states:
-
-| State | "2+1=" | English sample |
+| Situation | AI answers "2+1=" | AI speaks English? |
 |---|---|---|
-| bare core (nothing connected) | `?` — knows nothing | `the cat cat` (word salad) |
-| + `english` module | `?` — english adds no math | `the cat runs in the box` |
-| + `demo_math` module | `3` — correct | — |
-| after disconnecting everything | `?` — knowledge removed without a trace | — |
+| nothing connected | `?` — garbage, it knows nothing | no, gibberish |
+| math module connected | `3` — correct! | still gibberish |
+| english module connected | `?` — math module is not connected! | yes: `the cat runs in the box` |
+| everything disconnected again | `?` — forgot everything | no, gibberish |
+
+One brain. Different modules. Different knowledge.
+**This is ModuleMind.**
 
 ---
 
-## How it works (30 seconds)
+## I want to make my own module
 
-- The core is a tiny transformer (~235K parameters). It is **frozen**:
-  module training never changes a single core weight.
-- A **module** = `manifest.json` (a few fields) + `weights/lora.npz`
-  (a LoRA adapter, ~30–70 KB). Training touches ONLY the module weights.
-- **ModuleHub** connects/disconnects modules at runtime; every action is
-  logged to `logs/modulemind.log`.
-- Full details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+You need: a free Google account (for Google Colab).
+No powerful computer. No GPU.
 
-## Project structure
+Full guides: `docs/MODULE_GUIDE.md` and `docs/COLAB_TRAINING.md`.
+
+In short:
+
+1. Pick **ONE** thing your module will know. Just one.
+   Good examples: "multiplication table", "capital cities", "colors".
+2. Write examples in a file. One per line, like this:
+
+   ```
+   2*3=6
+   4*5=20
+   ```
+
+   20–1000 lines is enough.
+3. Copy our example module and rename it:
+
+   ```bash
+   cp -r modules/demo_math modules/my_skill
+   ```
+
+4. Open Google Colab (free in browser), paste our ready-made training cell
+   (see `docs/COLAB_TRAINING.md`), wait ~10 minutes.
+5. Download one small weights file and put it into your module folder.
+6. Done. Connect your module — the AI now knows your skill.
+
+---
+
+## Honest FAQ
+
+**Can two modules be connected at the same time?**
+Technically yes. But then the two skills start to interfere (we measured
+it). For now it is better to switch modules — it takes a millisecond
+and is 100% safe.
+
+**What if I delete a module file?**
+The AI forgets that skill. The core is not harmed.
+
+**What if I train a new core?**
+Then retrain all modules under the new core. A module only works with the
+core it was trained with. Like a cartridge made for one console model.
+
+**Is it a chatbot like ChatGPT?**
+Not yet. Today it is a small working PROOF of the idea (42 tests, all
+green). Next step: a bigger core trained on real texts.
+
+---
+
+## For developers and AI agents
 
 ```
-modulemind/core/     the core: tiny_core, lora, hub, tokenizer, checkpoint, pretrain
-modulemind/data/     deterministic toy corpora
-modules/             pluggable modules — demo_math is THE template to copy
-checkpoints/         core_v1.npz — the release core (trained, committed)
-tests/               42 mini-tests (written BEFORE the code, always)
-demo.py              live proof: run it after anything changes
-docs/                guides for humans and AI agents
-logs/                modulemind.log — what happened and when
+modulemind/core/     core code: tiny_core, lora, hub, tokenizer, checkpoint, pretrain
+modulemind/data/     training data generators (deterministic)
+modules/             modules. demo_math is the template — copy it
+checkpoints/         the trained core (release artifact)
+tests/               42 mini-tests. Tests are ALWAYS written before the code
+demo.py              live demo. Run it after any change
+docs/                all guides
+logs/                what happened and when (modulemind.log)
 ```
 
-## FAQ
+Deep documents:
 
-**Can I connect two modules at once?**
-Yes, they stack mechanically. But skills trained independently interfere
-(measured: english quality drops when math is stacked) — switch modules
-instead; instant and lossless. Co-training is planned (roadmap).
-
-**I rebuilt the core and modules give garbage.**
-Module weights are tied to the exact core weights. Retrain each module
-under your new core (`python -m modules.<name>.train`).
-
-**Where do I see what the AI "knows" right now?**
-`hub.describe()` — the list of connected modules with their descriptions.
-
-**Who trains the modules?**
-The community, on free Colab/Kaggle, following docs/MODULE_GUIDE.md.
-AI agents may also edit module weights directly — rules in
-[docs/MODULE_FORMAT.md](docs/MODULE_FORMAT.md).
-
-## Documentation
-
-| Document | About |
+| File | What is inside |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | how it all works and why, with measured numbers |
-| [docs/MODULE_FORMAT.md](docs/MODULE_FORMAT.md) | module format — for humans and AI agents |
-| [docs/MODULE_GUIDE.md](docs/MODULE_GUIDE.md) | build and train your own module, step by step |
-| [docs/COLAB_TRAINING.md](docs/COLAB_TRAINING.md) | training on free Colab/Kaggle |
-| [docs/HANDOFF.md](docs/HANDOFF.md) | continuation document (kept locally, not in the repo) |
+| `docs/ARCHITECTURE.md` | how it works inside, with measured numbers |
+| `docs/MODULE_FORMAT.md` | module file format (humans and AI agents can edit weights) |
+| `docs/MODULE_GUIDE.md` | make your own module, step by step |
+| `docs/COLAB_TRAINING.md` | training on free Colab/Kaggle |
+| `docs/HANDOFF.md` | internal continuation document (not public) |
 
 ## Status
 
-- [x] Stage 0: MVP — core + LoRA modules + demo_math (31 tests)
-- [x] Stage 1a: FIRST core trained from scratch (core_v1) + english module —
-      the whole idea proven: knowledge comes only from modules
-- [ ] Stage 1b: real pretraining on Colab (real corpus, BPE, bigger core)
-- [ ] Stage 2: a real English module on the pretrained core
-- [ ] Stage 3: co-trained modules (skills that work simultaneously), CI for PRs
+- [x] Working proof: empty core + modules that add/remove knowledge (42 tests)
+- [ ] Bigger core trained on real texts
+- [ ] Modules that work together at the same time
+- [ ] Automatic checks for community contributions
 
-Reference: [minimind](https://github.com/jingyaogong/minimind) — same path,
-smaller, with pluggable knowledge.
+Reference project: [minimind](https://github.com/jingyaogong/minimind).
