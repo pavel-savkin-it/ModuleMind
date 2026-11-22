@@ -78,35 +78,85 @@ One brain. Different modules. Different knowledge.
 
 ---
 
-## I want to make my own module
+## How to train a new module
 
-You need: a free Google account (for Google Colab).
-No powerful computer. No GPU.
+You need: a free Google account. No GPU. No powerful computer.
 
-Full guides: `docs/MODULE_GUIDE.md` and `docs/COLAB_TRAINING.md`.
+**Step 1 — pick ONE skill and write examples.**
 
-In short:
+One example per line. Allowed characters: digits, `+`, `=`, space
+(for text skills see `docs/MODULE_GUIDE.md`).
 
-1. Pick **ONE** thing your module will know. Just one.
-   Good examples: "multiplication table", "capital cities", "colors".
-2. Write examples in a file. One per line, like this:
+**Step 2 — copy the template and rename it:**
 
-   ```
-   2*3=6
-   4*5=20
-   ```
+```bash
+cp -r modules/demo_math modules/my_skill
+```
 
-   20–1000 lines is enough.
-3. Copy our example module and rename it:
+Open `modules/my_skill/manifest.json` and change two lines:
 
-   ```bash
-   cp -r modules/demo_math modules/my_skill
-   ```
+- `"name": "my_skill"` (small latin letters and `_` only)
+- `"description": "what your module teaches"`
 
-4. Open Google Colab (free in browser), paste our ready-made training cell
-   (see `docs/COLAB_TRAINING.md`), wait ~10 minutes.
-5. Download one small weights file and put it into your module folder.
-6. Done. Connect your module — the AI now knows your skill.
+**Step 3 — train on Colab (free, ~2 minutes).**
+
+Open [colab.research.google.com](https://colab.research.google.com) →
+New notebook → paste this cell and run:
+
+```python
+!git clone https://github.com/pavel-savkin-it/ModuleMind.git
+%cd ModuleMind
+
+# 1) your examples — CHANGE these lines to yours!
+import pathlib
+pathlib.Path("my_data.txt").write_text(
+    "\n".join(f"{a}+{b}={a+b}" for a in range(10) for b in range(10))
+)
+
+# 2) train (the core is already in the repo — no need to rebuild it)
+!python -m modules.demo_math.train --data-file my_data.txt --out my_weights --steps 800
+
+# 3) download the trained weights file
+from google.colab import files
+files.download("my_weights/lora.npz")
+```
+
+**Step 4 — put the weights into your module:**
+
+```bash
+mkdir -p modules/my_skill/weights
+cp Downloads/lora.npz modules/my_skill/weights/lora.npz
+```
+
+Done. Run `python -m pytest -v` — it must stay green.
+Your module is ready to connect.
+
+---
+
+## How to connect and disconnect a module
+
+Save this as `my_ai.py` in the repo folder and run `python my_ai.py`:
+
+```python
+import torch
+from modulemind.core import ModuleHub
+from modulemind.core.checkpoint import load_core
+from modulemind.core.tokenizer import CharTokenizer
+
+core = load_core("checkpoints/core_v1.npz")   # load the empty brain
+tok = CharTokenizer("0123456789+= ")          # turns text into numbers
+hub = ModuleHub(core, "modules")              # scans the modules/ folder
+
+hub.connect("my_skill")                       # ← the AI LEARNS the skill
+print(hub.describe())                         # what the AI knows right now
+
+ids = torch.tensor([tok.encode("5+3=")])      # ask a question
+print(tok.decode([int(core(ids)[0, -1].argmax())]))   # the AI answers
+
+hub.disconnect("my_skill")                    # ← the AI FORGOT. No trace.
+```
+
+That is all. `connect` = learn. `disconnect` = forget.
 
 ---
 

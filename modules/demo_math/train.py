@@ -61,8 +61,9 @@ def _answer_accuracy(core, tok, facts):
 
 def train_demo(steps=400, batch=32, lr=1e-2, seed=0, max_digit=4,
                rank=8, alpha=16.0, out_dir=None, log_to_console=True,
-               core=None):
-    """Train the adapter on addition facts; return metrics and save weights."""
+               core=None, data_file=None):
+    """Train the adapter on addition facts (or on a user's data file);
+    return metrics and save weights."""
     log = get_logger("modulemind.demo_train", log_dir=str(ROOT / "logs"))
     torch.manual_seed(seed)
 
@@ -71,8 +72,25 @@ def train_demo(steps=400, batch=32, lr=1e-2, seed=0, max_digit=4,
         core, core_kind = _load_default_core(tok)
     else:
         core_kind = "provided"
-    facts = make_facts(max_digit)
-    baseline_acc = _answer_accuracy(core, tok, facts)
+
+    custom = data_file is not None
+    if custom:
+        lines = [l.strip() for l in
+                 Path(data_file).read_text(encoding="utf-8").splitlines()
+                 if l.strip()]
+        if not lines:
+            raise ValueError(f"data file {data_file} is empty")
+        bad = set("".join(lines)) - set(ALPHABET)
+        if bad:
+            raise ValueError(
+                f"data contains characters not in the core alphabet: "
+                f"{sorted(bad)} (allowed: {ALPHABET!r})"
+            )
+        facts = lines
+    else:
+        facts = make_facts(max_digit)
+
+    baseline_acc = None if custom else _answer_accuracy(core, tok, facts)
 
     handles = inject_lora(core, TARGETS, rank, alpha)
     params = [p for n, p in core.named_parameters() if p.requires_grad]
@@ -102,7 +120,7 @@ def train_demo(steps=400, batch=32, lr=1e-2, seed=0, max_digit=4,
             if log_to_console:
                 print(f"  step {step}/{steps} loss={last_loss:.4f}")
 
-    answer_acc = _answer_accuracy(core, tok, facts)
+    answer_acc = None if custom else _answer_accuracy(core, tok, facts)
     out_dir = Path(out_dir) if out_dir else MODULE_DIR / "weights"
     out_dir.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out_dir / "lora.npz", **lora_state_dict(handles))
@@ -110,9 +128,11 @@ def train_demo(steps=400, batch=32, lr=1e-2, seed=0, max_digit=4,
     result = {
         "steps": steps, "rank": rank, "facts": len(facts), "core": core_kind,
         "first_loss": round(first_loss, 4), "last_loss": round(last_loss, 4),
-        "baseline_acc": round(baseline_acc, 3), "answer_acc": round(answer_acc, 3),
         "weights": str(out_dir / "lora.npz"),
     }
+    if not custom:
+        result["baseline_acc"] = round(baseline_acc, 3)
+        result["answer_acc"] = round(answer_acc, 3)
     log.info("training finished: %s", json.dumps(result, ensure_ascii=False))
     return result
 
@@ -126,10 +146,14 @@ def main():
     ap.add_argument("--max-digit", type=int, default=4)
     ap.add_argument("--rank", type=int, default=8)
     ap.add_argument("--alpha", type=float, default=16.0)
+    ap.add_argument("--data-file", default=None,
+                    help="plain text file with your examples, one per line")
+    ap.add_argument("--out", default=None, help="output weights directory")
     args = ap.parse_args()
     res = train_demo(steps=args.steps, batch=args.batch, lr=args.lr,
                      seed=args.seed, max_digit=args.max_digit,
-                     rank=args.rank, alpha=args.alpha)
+                     rank=args.rank, alpha=args.alpha,
+                     data_file=args.data_file, out_dir=args.out)
     print(json.dumps(res, ensure_ascii=False, indent=2))
 
 
