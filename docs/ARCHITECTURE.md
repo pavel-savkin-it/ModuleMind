@@ -64,20 +64,23 @@ Reference: [minimind](https://github.com/jingyaogong/minimind) — a mini LM
 trained from scratch on cheap hardware. Our core is the same idea, ~235K
 parameters, with pluggable knowledge.
 
-## The first model: what was proven (stage 1a)
+## The first model: what was proven (stage 1a, artifacts trained on Colab)
 
-- core_v1 pretrained from scratch on a NEUTRAL word-salad corpus (letters and
-  words, no grammar, no math) — the core can work with text but knows nothing
-  specific; this is the 'consciousness without knowledge' of the product idea;
-- `english` module: teaches the core simple English sentences — fresh-holdout
-  loss (reserved subjects never seen in training) drops measurably when
-  connected;
-- `demo_math` module: teaches addition 0..4 — 5/5 facts answered correctly
-  when connected (bare core: none);
-- modules stack on the same layers: with both connected the AI speaks English
-  AND does math; disconnecting one leaves the other intact; disconnecting
-  both restores the core bit-for-bit;
-- e2e tests assert all of the above, `demo.py` prints it live.
+Measured on the release artifacts (checkpoints/core_v1.npz):
+
+- bare core: english holdout loss 5.98, math facts 0/5 — **the core knows
+  nothing** (it was pretrained on neutral word salad only);
+- +english module: holdout loss **5.98 → 0.93** — the grammar knowledge
+  comes from the module; math facts stay 0/5 (no knowledge leakage);
+- +math module: facts **5/5**; disconnecting removes the knowledge without a
+  trace (logits match bit-for-bit);
+- modules stack mechanically and switch instantly: after removing english
+  from a stack, math still answers 5/5;
+- KNOWN LIMITATION: with BOTH modules stacked simultaneously their effects
+  interfere (english loss rises to ~10.4, math answers degrade) because the
+  modules were trained independently. Co-training / routing is stage 3.
+
+e2e tests assert all of the above; `demo.py` prints it live.
 
 ## Honest limitations of stage 1a
 
