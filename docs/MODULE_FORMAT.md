@@ -39,8 +39,8 @@ Directory name = module name: lowercase latin letters, digits, `_`.
 | `core_compat` | no | expected core parameters; a mismatch logs a warning |
 
 A broken manifest never crashes the system: ModuleHub skips the module and
-logs a warning. Two modules with intersecting `targets` cannot be connected
-at the same time.
+logs a warning. Several modules may stack on the same `targets` — their
+effects add up; disconnecting one leaves the others intact.
 
 ## weights/lora.npz
 

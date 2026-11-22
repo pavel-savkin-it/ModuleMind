@@ -44,6 +44,8 @@ def fact_answers(core, tok):
 @needs_core
 @needs_math
 def test_math_knowledge_comes_from_the_module():
+    """The core is pretrained on neutral word salad: it cannot do math.
+    The math module brings the knowledge; disconnecting removes it."""
     core = load_core(CHECKPOINT)
     tok = make_tok()
     probe = torch.tensor([tok.encode("2+1=")], dtype=torch.long)
@@ -86,11 +88,23 @@ def test_english_knowledge_comes_from_the_module():
 @needs_core
 @needs_math
 @needs_en
-def test_modules_are_switchable():
+def test_modules_are_switchable_and_stackable():
+    """The dream: both modules connected at once — the AI speaks English AND
+    does math. Disconnecting one leaves the other intact."""
     core = load_core(CHECKPOINT)
+    tok_math = make_tok()
     hub = ModuleHub(core, ROOT / "modules")
     hub.connect("english")
     hub.connect("demo_math")
     assert hub.connected() == ["english", "demo_math"]
+
+    # math keeps working with the english module stacked on the same layers
+    assert fact_answers(core, tok_math) == RIGHT
+
     hub.disconnect("english")
     assert hub.connected() == ["demo_math"]
+    assert fact_answers(core, tok_math) == RIGHT  # math survives english removal
+
+    hub.disconnect("demo_math")
+    assert hub.connected() == []
+    assert fact_answers(core, tok_math) != RIGHT  # bare core knows neither

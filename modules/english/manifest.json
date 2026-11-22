@@ -1,11 +1,12 @@
 {
   "name": "english",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "lora_adapter",
-  "description": "English language module: the model speaks simple English sentences (toy corpus v1). Trained under core v1.",
-  "targets": ["attn.q", "attn.v", "lm_head"],
-  "rank": 12,
-  "alpha": 12.0,
+  "description": "English language module: the model speaks simple English sentences (toy corpus v1). The core is pretrained on neutral word salad, so this grammar knowledge comes from the module. Trained under core v1.",
+  "targets": ["attn.q", "attn.v", "attn.o"],
+  "rank": 16,
+  "alpha": 16.0,
   "weights": "weights/lora.npz",
   "core_compat": {"d_model": 96, "n_layers": 2, "vocab_size": 41}
 }
+

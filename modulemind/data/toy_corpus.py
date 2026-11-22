@@ -1,8 +1,10 @@
 """Toy corpora for core v1 and the english module (deterministic, tiny).
 
-English template sentences + arithmetic lines. The holdout split uses two
-reserved subjects ("the lion", "the tiger") that NEVER appear in training
-data, so its lines are guaranteed fresh.
+Core v1 pretrains on a NEUTRAL word-salad filler (letters and words only —
+no grammar, no math): the core is a machine without knowledge, knowledge
+comes exclusively from modules. The english module trains on template
+sentences; its holdout uses two reserved subjects ("the lion", "the tiger")
+that NEVER appear in training data.
 """
 import random
 
@@ -20,6 +22,33 @@ _STARTS = ["i see", "i like", "this is", "look at", "here is", "we have"]
 _ITEMS = ["a red ball", "a big dog", "a small cat", "a green tree",
           "a nice house", "my old friend", "a blue car", "a warm cake"]
 _NOUNS = ["cats", "dogs", "balls", "trees", "cars", "books", "birds", "apples"]
+
+_WORDS = [
+    "cat", "dog", "bird", "friend", "boy", "girl", "man", "mouse", "sister",
+    "teacher", "lion", "tiger", "runs", "jumps", "sleeps", "eats", "plays",
+    "walks", "sits", "mat", "garden", "tree", "house", "box", "grass", "door",
+    "room", "bed", "table", "red", "blue", "green", "small", "big", "nice",
+    "old", "warm", "cold", "ball", "car", "cake", "day", "book", "apple",
+    "milk", "water", "sun", "moon", "star", "rain", "snow", "wind", "fire",
+    "road", "city", "street", "home", "school", "music", "money", "paper",
+    "story", "answer", "window", "river", "forest", "bread", "apple", "kite",
+]
+
+
+def make_filler(n=800, seed=2026):
+    """Neutral word-salad lines: words without grammar, no math.
+
+    Pretraining on this gives the core character/word machinery but NO
+    knowledge — neither English sentences nor arithmetic.
+    """
+    rnd = random.Random(seed)
+    lines = []
+    while len(lines) < n:
+        k = rnd.randint(3, 6)
+        line = " ".join(rnd.choice(_WORDS) for _ in range(k)) + "."
+        if len(line) <= MAX_LEN:
+            lines.append(line)
+    return lines
 
 
 def _english_line(rnd: random.Random, subjects) -> str:
@@ -44,11 +73,16 @@ def make_english(n=800, seed=7):
 
 
 def make_holdout(n=40, seed=123):
-    """Fresh English sentences (reserved subjects only, disjoint from train)."""
+    """Fresh English sentences, guaranteed disjoint from make_english().
+
+    Uses the two reserved subjects AND only the subject-verb-place structure,
+    so no line can coincide with training data.
+    """
     rnd = random.Random(seed)
     lines, seen = [], set()
     while len(lines) < n:
-        line = _english_line(rnd, _RESERVED_SUBJECTS)
+        line = (f"{rnd.choice(_RESERVED_SUBJECTS)} "
+                f"{rnd.choice(_VERBS)} {rnd.choice(_PLACES)}.")
         if line not in seen:
             seen.add(line)
             lines.append(line)

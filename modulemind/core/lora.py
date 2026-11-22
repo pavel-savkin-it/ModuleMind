@@ -17,17 +17,20 @@ log = logging.getLogger("modulemind.lora")
 class LoRALinear(nn.Module):
     """Wrapper over nn.Linear: base(x) + scaling * (x @ A^T @ B^T)."""
 
-    def __init__(self, base: nn.Linear, rank: int, alpha: float):
+    def __init__(self, base, rank: int, alpha: float):
         super().__init__()
-        if not isinstance(base, nn.Linear):
-            raise TypeError("LoRA can only wrap nn.Linear")
+        if not isinstance(base, (nn.Linear, LoRALinear)):
+            raise TypeError("LoRA wraps nn.Linear or another LoRALinear (stacking)")
         self.base = base
         for p in self.base.parameters():
             p.requires_grad_(False)
+        inner = base
+        while isinstance(inner, LoRALinear):  # unwrap the stack
+            inner = inner.base
         self.rank = rank
         self.scaling = alpha / rank
-        self.lora_A = nn.Parameter(torch.randn(rank, base.in_features) * 0.02)
-        self.lora_B = nn.Parameter(torch.zeros(base.out_features, rank))
+        self.lora_A = nn.Parameter(torch.randn(rank, inner.in_features) * 0.02)
+        self.lora_B = nn.Parameter(torch.zeros(inner.out_features, rank))
 
     def forward(self, x):
         return self.base(x) + self.scaling * (x @ self.lora_A.T @ self.lora_B.T)
@@ -48,17 +51,21 @@ def _matches(name: str, targets) -> bool:
 def inject_lora(model, targets, rank: int, alpha=None):
     """Place LoRA on top of the layers named in targets.
 
-    Returns dict {layer_path: LoRALinear}. Freezes every non-LoRA parameter:
-    the core is untouchable, gradients live only in the adapters.
+    Modules may STACK: if the target layer already carries a LoRALinear
+    (another module), the new adapter wraps it and both contributions add
+    up. Returns dict {layer_path: LoRALinear}. Freezes every non-LoRA
+    parameter: the core is untouchable, gradients live only in adapters.
     """
     if alpha is None:
         alpha = float(rank)
     handles = {}
     for name, mod in list(model.named_modules()):
-        if isinstance(mod, nn.Linear) and _matches(name, targets):
-            lora = LoRALinear(mod, rank, alpha)
-            _replace(model, name, lora)
-            handles[name] = lora
+        if not _matches(name, targets):
+            continue
+        if isinstance(mod, (nn.Linear, LoRALinear)):
+            wrapper = LoRALinear(mod, rank, alpha)
+            _replace(model, name, wrapper)
+            handles[name] = wrapper
     if not handles:
         raise ValueError(f"LoRA: none of the targets found in the core: {targets}")
     for n, p in model.named_parameters():
@@ -77,13 +84,18 @@ def remove_lora(model, handles) -> int:
 
 
 def detach_lora(model) -> int:
-    """Remove ALL LoRA wrappers from the model. Returns how many."""
+    """Remove ALL LoRA wrappers (including stacked ones). Returns how many."""
     n = 0
-    for name, mod in list(model.named_modules()):
-        if isinstance(mod, LoRALinear):
+    while True:
+        found = [
+            (name, mod) for name, mod in model.named_modules()
+            if isinstance(mod, LoRALinear)
+        ]
+        if not found:
+            return n
+        for name, mod in found:
             _replace(model, name, mod.base)
             n += 1
-    return n
 
 
 def lora_state_dict(handles) -> dict:

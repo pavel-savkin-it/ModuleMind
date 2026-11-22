@@ -8,7 +8,7 @@ import pytest
 
 from conftest import make_core
 
-from modulemind.core.hub import ModuleHub, ModuleError, ModuleConflictError
+from modulemind.core.hub import ModuleHub, ModuleError
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO = ROOT / "modules" / "demo_math"
@@ -72,7 +72,9 @@ def test_invalid_manifest_skipped(core_demo_compat, modules_copy):
         hub.connect("demo_math")
 
 
-def test_conflicting_targets_raise(core_demo_compat, modules_copy):
+def test_modules_can_stack_on_the_same_layers(core_demo_compat, modules_copy):
+    """Two modules may share the same target layers; disconnecting one
+    leaves the other connected and intact."""
     second = modules_copy / "demo_math_2"
     shutil.copytree(DEMO, second)
     mf = second / "manifest.json"
@@ -81,8 +83,12 @@ def test_conflicting_targets_raise(core_demo_compat, modules_copy):
     mf.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     hub = ModuleHub(core_demo_compat, modules_copy)
     hub.connect("demo_math")
-    with pytest.raises(ModuleConflictError):
-        hub.connect("demo_math_2")
+    hub.connect("demo_math_2")
+    assert hub.connected() == ["demo_math", "demo_math_2"]
+    hub.disconnect("demo_math")
+    assert hub.connected() == ["demo_math_2"]
+    hub.disconnect("demo_math_2")
+    assert hub.connected() == []
 
 
 def test_module_without_weights_is_identity(core_demo_compat, tmp_path):

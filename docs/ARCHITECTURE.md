@@ -37,8 +37,10 @@ checkpoints/
    test checks logits match bit-for-bit after disconnecting).
 2. **An untrained module = zero effect.** `lora_B` starts as zeros, so a
    freshly connected untrained module does not change the core at all.
-3. **One module per layer.** Two modules with overlapping `targets` →
-   `ModuleConflictError`. Merging several modules is stage 3.
+3. **Modules stack.** Several modules may wrap the same core layer; their
+   contributions add up. Disconnecting one module rebuilds the chain —
+   the others keep working with their weights intact. (A per-layer
+   exclusivity mode is reserved for the future.)
 4. **Module weights are tied to the exact core.** An adapter is trained under
    one specific core instance (same config AND same weights). The release
    artifact `checkpoints/core_v1.npz` is the single source: rebuilt only via
@@ -64,12 +66,17 @@ parameters, with pluggable knowledge.
 
 ## The first model: what was proven (stage 1a)
 
-- core_v1 pretrained from scratch on CPU (3000 steps, loss 2.74 → ~1.2 on the
-  toy corpus, ~10 minutes on a weak laptop);
-- `english` module: holdout loss (fresh sentences, reserved subjects never seen
-  in training) drops measurably when connected;
-- `demo_math` module: 5/5 facts answered correctly when connected;
-- bare core fails both tasks; disconnecting restores the core bit-for-bit;
+- core_v1 pretrained from scratch on a NEUTRAL word-salad corpus (letters and
+  words, no grammar, no math) — the core can work with text but knows nothing
+  specific; this is the 'consciousness without knowledge' of the product idea;
+- `english` module: teaches the core simple English sentences — fresh-holdout
+  loss (reserved subjects never seen in training) drops measurably when
+  connected;
+- `demo_math` module: teaches addition 0..4 — 5/5 facts answered correctly
+  when connected (bare core: none);
+- modules stack on the same layers: with both connected the AI speaks English
+  AND does math; disconnecting one leaves the other intact; disconnecting
+  both restores the core bit-for-bit;
 - e2e tests assert all of the above, `demo.py` prints it live.
 
 ## Honest limitations of stage 1a

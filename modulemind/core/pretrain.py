@@ -1,15 +1,16 @@
 """Stage 1: from-scratch pretraining of the TinyCore (the first model).
 
-Trains the FULL core on next-character prediction over a toy corpus.
-Produces the release artifact checkpoints/core_v1.npz — the base mind that
-community modules plug into.
+Trains the FULL core on next-character prediction over a NEUTRAL filler
+corpus (word salad: letters and words, no grammar, no math). The core
+becomes a machine that can work with text but knows NOTHING specific —
+all knowledge arrives later via LoRA modules.
 
-Run from the repo root (CPU is fine, ~5-10 minutes):
+Produces the release artifact checkpoints/core_v1.npz. Run from the repo
+root (CPU is fine, ~10 minutes; or on Colab):
     python -m modulemind.core.pretrain
 """
 import argparse
 import json
-import random
 import sys
 from pathlib import Path
 
@@ -25,9 +26,7 @@ from modulemind.core.tiny_core import TinyCore           # noqa: E402
 from modulemind.core.tokenizer import CharTokenizer      # noqa: E402
 from modulemind.core.checkpoint import save_core         # noqa: E402
 from modulemind.core.log_setup import get_logger         # noqa: E402
-from modulemind.data.toy_corpus import (                 # noqa: E402
-    ALPHABET, make_english, make_math,
-)
+from modulemind.data.toy_corpus import ALPHABET, make_filler  # noqa: E402
 
 
 def pretrain_core(core, lines, steps=3000, batch=32, lr=3e-3, seed=0,
@@ -79,7 +78,7 @@ def main():
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--lr", type=float, default=3e-3)
     ap.add_argument("--seed", type=int, default=2026)
-    ap.add_argument("--n-english", type=int, default=700)
+    ap.add_argument("--n-filler", type=int, default=800)
     ap.add_argument("--d-model", type=int, default=96)
     ap.add_argument("--out", default="checkpoints/core_v1.npz")
     args = ap.parse_args()
@@ -91,9 +90,8 @@ def main():
     ))
     n_params = sum(p.numel() for p in core.parameters())
 
-    lines = make_english(args.n_english, seed=7) + make_math()
-    random.Random(args.seed).shuffle(lines)
-    print(f"core: {n_params} params, corpus: {len(lines)} lines")
+    lines = make_filler(args.n_filler, seed=args.seed)
+    print(f"core: {n_params} params, corpus: {len(lines)} filler lines")
     res = pretrain_core(core, lines, steps=args.steps, batch=args.batch,
                         lr=args.lr, seed=args.seed)
 
@@ -103,8 +101,7 @@ def main():
         "config": {"vocab_size": tok.vocab_size, "d_model": args.d_model,
                    "n_layers": 2, "n_heads": 4, "max_seq": 48,
                    "seed": args.seed},
-        "corpus": {"english_lines": args.n_english,
-                   "math_lines": 100, "alphabet": ALPHABET},
+        "corpus": {"filler_lines": args.n_filler, "alphabet": ALPHABET},
         **res,
     }
     meta_path = ROOT / args.out.replace(".npz", ".json")

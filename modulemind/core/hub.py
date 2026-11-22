@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .lora import inject_lora, remove_lora, load_lora_state
+from .lora import inject_lora, remove_lora, load_lora_state, lora_state_dict, detach_lora
 from .log_setup import get_logger
 
 REQUIRED_FIELDS = ("name", "version", "type", "description", "targets", "rank")
@@ -22,7 +22,8 @@ class ModuleError(Exception):
 
 
 class ModuleConflictError(ModuleError):
-    """Two modules claim the same core layers."""
+    """Reserved for a future per-layer exclusivity mode (not raised now:
+    modules are allowed to stack on the same layers)."""
 
 
 class ModuleHub:
@@ -91,19 +92,14 @@ class ModuleHub:
     # ---------- lifecycle ----------
 
     def connect(self, name: str):
-        """Connect a module: inject its LoRA and (if present) load weights."""
+        """Connect a module: stack its LoRA on the target layers and (if
+        present) load weights. Several modules may share the same layers;
+        their contributions add up."""
         if name not in self._catalog:
             raise ModuleError(f"module '{name}' not found in {self.modules_dir}")
         if name in self._connected:
             raise ModuleError(f"module '{name}' is already connected")
         meta = self._catalog[name]
-
-        for other, info in self._connected.items():
-            overlap = set(meta["targets"]) & set(info["meta"]["targets"])
-            if overlap:
-                raise ModuleConflictError(
-                    f"layers {sorted(overlap)} are already taken by module '{other}'"
-                )
 
         compat = meta.get("core_compat", {})
         mism = {
@@ -146,12 +142,33 @@ class ModuleHub:
         )
 
     def disconnect(self, name: str):
-        """Disconnect a module: the core returns to its exact prior state."""
+        """Disconnect a module; the remaining stacked modules keep working.
+
+        Implementation: snapshot the adapter weights of the remaining
+        modules (in connect order), unwrap the whole chain down to the
+        original core layers, then re-inject the remaining modules with
+        their weights. The disconnected module leaves no trace.
+        """
         if name not in self._connected:
             raise ModuleError(f"module '{name}' is not connected")
-        remove_lora(self.core, self._connected[name]["handles"])
+
+        remaining = []
+        for other, info in self._connected.items():
+            if other == name:
+                continue
+            remaining.append((other, info["meta"], lora_state_dict(info["handles"])))
+
+        detach_lora(self.core)
+        for other, meta, snap in remaining:
+            handles = inject_lora(
+                self.core, meta["targets"], meta["rank"], meta["alpha"]
+            )
+            load_lora_state(handles, snap)
+            self._connected[other]["handles"] = handles
+
         del self._connected[name]
-        self.log.info("disconnected module '%s'", name)
+        self.log.info("disconnected module '%s' (%d modules remain)", name,
+                      len(remaining))
 
     # ---------- the knowledge of the system ----------
 

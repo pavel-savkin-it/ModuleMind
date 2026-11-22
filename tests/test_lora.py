@@ -52,6 +52,36 @@ def test_detach_lora_removes_all():
     assert all(not isinstance(m, LoRALinear) for m in core.modules())
 
 
+def test_modules_stack_on_the_same_layer():
+    """Two adapters on one layer add up; removing the top restores the bottom."""
+    core = make_core(seed=7)
+    idx = torch.zeros((1, 4), dtype=torch.long)
+    with torch.no_grad():
+        bare = core(idx).clone()
+
+    h1 = inject_lora(core, targets=["lm_head"], rank=4)
+    with torch.no_grad():
+        h1["lm_head"].lora_B.normal_(0.0, 0.5)
+    with torch.no_grad():
+        one = core(idx).clone()
+    assert not torch.allclose(bare, one)
+
+    h2 = inject_lora(core, targets=["lm_head"], rank=4)  # stacks on top of h1
+    with torch.no_grad():
+        h2["lm_head"].lora_B.normal_(0.0, 0.5)
+    with torch.no_grad():
+        two = core(idx).clone()
+    assert not torch.allclose(one, two)
+
+    remove_lora(core, h2)  # top module leaves, bottom keeps working
+    with torch.no_grad():
+        assert torch.allclose(one, core(idx))
+
+    assert detach_lora(core) == 1  # only the bottom wrapper remains
+    with torch.no_grad():
+        assert torch.allclose(bare, core(idx))
+
+
 def test_base_weights_are_frozen():
     core = make_core()
     inject_lora(core, targets=["lm_head"], rank=4)

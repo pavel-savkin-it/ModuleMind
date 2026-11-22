@@ -20,18 +20,21 @@ query → CORE (TinyCore, frozen) → [LoRA modules: ✅ math ✅ english …] �
 ## The first model (proof it all works)
 
 `checkpoints/core_v1.npz` — our first core, **trained from scratch on CPU**
-(~235K params, toy English + arithmetic corpus). Two modules are trained under
-it and committed:
+(~235K params) on a NEUTRAL word-salad corpus: it learns to work with text
+but knows **neither grammar nor math**. Knowledge comes only from modules:
 
 | Module | What the AI gets | Proof |
 |---|---|---|
-| `demo_math` | answers `a+b=` for digits 0..4 | 5/5 facts right when connected |
-| `english` | speaks simple English sentences | holdout loss drops measurably |
+| `demo_math` | answers `a+b=` for digits 0..4 | bare core: 0/5 → with module: 5/5 |
+| `english` | speaks simple English sentences | fresh-holdout loss drops measurably |
+
+Modules stack: with both connected the AI speaks English AND does math;
+disconnecting one leaves the other intact.
 
 Live proof:
 
 ```bash
-python demo.py        # bare core → babble; +english → English; +math → correct sums
+python demo.py        # bare core → word salad; +english → sentences; +math → sums
 python -m pytest -v   # all mini-tests incl. acceptance e2e
 ```
 

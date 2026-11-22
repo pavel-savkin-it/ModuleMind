@@ -31,7 +31,7 @@ from modulemind.data.toy_corpus import (                       # noqa: E402
 )
 
 MODULE_DIR = Path(__file__).resolve().parent
-TARGETS = ["attn.q", "attn.v", "lm_head"]
+TARGETS = ["attn.q", "attn.v", "attn.o"]
 DEFAULT_CORE = ROOT / "checkpoints" / "core_v1.npz"
 HOLDOUT = make_holdout()
 
@@ -57,7 +57,7 @@ def _holdout_loss(core, tok):
     return total / max(ntok, 1)
 
 
-def train_english(steps=1500, batch=32, lr=3e-3, seed=0, rank=12, alpha=12.0,
+def train_english(steps=2500, batch=32, lr=3e-3, seed=0, rank=16, alpha=16.0,
                   out_dir=None, log_to_console=True, core=None):
     """Train the english adapter; return metrics and save weights."""
     log = get_logger("modulemind.english_train", log_dir=str(ROOT / "logs"))
@@ -117,12 +117,12 @@ def train_english(steps=1500, batch=32, lr=3e-3, seed=0, rank=12, alpha=12.0,
 
 def main():
     ap = argparse.ArgumentParser(description="Train the english module")
-    ap.add_argument("--steps", type=int, default=1500)
+    ap.add_argument("--steps", type=int, default=2500)
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--lr", type=float, default=3e-3)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--rank", type=int, default=12)
-    ap.add_argument("--alpha", type=float, default=12.0)
+    ap.add_argument("--rank", type=int, default=16)
+    ap.add_argument("--alpha", type=float, default=16.0)
     args = ap.parse_args()
     res = train_english(steps=args.steps, batch=args.batch, lr=args.lr,
                         seed=args.seed, rank=args.rank, alpha=args.alpha)
