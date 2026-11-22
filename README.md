@@ -1,6 +1,6 @@
 # ModuleMind
 
-## The idea in 10 seconds
+## The idea
 
 We are building a small AI brain.
 
